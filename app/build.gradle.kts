@@ -12,6 +12,7 @@ plugins {
 }
 
 repositories {
+    mavenLocal()
     // Use Maven Central for resolving dependencies.
     mavenCentral()
 }
@@ -21,7 +22,9 @@ dependencies {
     testImplementation("org.junit.jupiter:junit-jupiter:5.7.2")
 
     // This dependency is used by the application.
-    implementation("com.google.zxing:javase:3.4.1")
+    implementation("com.google.zxing:core:3.4.2-SNAPSHOT")
+    implementation("com.google.zxing:javase:3.4.2-SNAPSHOT")
+    implementation("org.apache.pdfbox:pdfbox:2.0.24")
 }
 
 application {

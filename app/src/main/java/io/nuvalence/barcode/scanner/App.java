@@ -5,28 +5,89 @@ package io.nuvalence.barcode.scanner;
 
 import com.google.zxing.*;
 import com.google.zxing.client.j2se.BufferedImageLuminanceSource;
+import com.google.zxing.common.GlobalHistogramBinarizer;
 import com.google.zxing.common.HybridBinarizer;
 import com.google.zxing.pdf417.PDF417Reader;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
-import java.io.ByteArrayInputStream;
+import java.io.FileInputStream;
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
+import java.util.Collections;
+import java.util.EnumMap;
+import java.util.Map;
 
 public class App {
-    public static String parsePdf417Barcode(String filepath) throws IOException, ChecksumException, NotFoundException, FormatException {
-        BufferedImage bf = ImageIO.read(new ByteArrayInputStream(Files.readAllBytes(Paths.get(filepath))));
-        BinaryBitmap bitmap = new BinaryBitmap(new HybridBinarizer(new BufferedImageLuminanceSource(bf)));
-        return new PDF417Reader().decode(bitmap).getText();
+
+    private static final Map<DecodeHintType,Object> HINTS;
+    private static final Map<DecodeHintType,Object> HINTS_PURE;
+    static {
+        HINTS = new EnumMap<>(DecodeHintType.class);
+        HINTS.put(DecodeHintType.TRY_HARDER, Boolean.TRUE);
+        HINTS.put(DecodeHintType.POSSIBLE_FORMATS, Collections.singleton(BarcodeFormat.PDF_417));
+        HINTS.put(DecodeHintType.ALSO_INVERTED, Boolean.TRUE);
+        HINTS_PURE = new EnumMap<>(HINTS);
+        HINTS_PURE.put(DecodeHintType.PURE_BARCODE, Boolean.TRUE);
+    }
+
+    public static void parsePdf417Barcode(String filepath) throws IOException {
+        BufferedImage image = ImageIO.read(new FileInputStream(filepath));
+
+        LuminanceSource source = new BufferedImageLuminanceSource(image);
+        BinaryBitmap bitmap = new BinaryBitmap(new GlobalHistogramBinarizer(source));
+        Result result = null;
+
+        try {
+            Reader reader = new PDF417Reader();
+            ReaderException savedException = null;
+
+            try {
+                System.out.println("Looking for normal barcode in image...");
+                result = reader.decode(bitmap, HINTS);
+            } catch (ReaderException re) {
+                savedException = re;
+            }
+
+            if (result == null) {
+                try {
+                    System.out.println("Looking for pure barcode...");
+                    result = reader.decode(bitmap, HINTS_PURE);
+                } catch (ReaderException re) {
+                    savedException = re;
+                }
+            }
+
+            if (result == null) {
+                try {
+                    System.out.println("Trying again with another binarizer...");
+                    BinaryBitmap hybridBitmap = new BinaryBitmap(new HybridBinarizer(source));
+                    result = reader.decode(hybridBitmap, HINTS);
+                } catch (ReaderException re) {
+                    savedException = re;
+                }
+            }
+
+            if (result != null) {
+                System.out.printf("Barcode format: %s%n", result.getBarcodeFormat());
+                System.out.printf("Raw Text: %n%s%n", result.getText());
+            } else {
+                try {
+                    throw savedException == null ? NotFoundException.getNotFoundInstance() : savedException;
+                } catch (FormatException | ChecksumException e) {
+                    throw new RuntimeException("Invalid barcode format", e);
+                } catch (ReaderException e) { // Including NotFoundException
+                    throw new RuntimeException("Barcode not found", e);
+                }
+            }
+        } finally {
+            image.flush();
+        }
     }
 
     public static void main(String[] args) {
         try {
-            System.out.println(parsePdf417Barcode(args[0]));
-        } catch (IOException | ChecksumException | NotFoundException | FormatException e) {
-            System.err.println("Failed to parse barcode");
+            parsePdf417Barcode(args[0]);
+        } catch (IOException e) {
             e.printStackTrace();
             System.exit(1);
         }
